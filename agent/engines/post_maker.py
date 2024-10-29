@@ -44,7 +44,7 @@ def generate_post(short_term_memory: str, long_term_memories: List[Dict], recent
     while tries < max_tries:
         try:
             response = requests.post(
-                url="https://api.hyperbolic.xyz/v1",
+                url="https://api.hyperbolic.xyz/v1/completions",
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {llm_api_key}",
@@ -52,7 +52,7 @@ def generate_post(short_term_memory: str, long_term_memories: List[Dict], recent
                 json = {
                 "prompt": prompt,
                 "model": "meta-llama/Meta-Llama-3.1-405B",
-                "max_tokens": 40,
+                "max_tokens": 512,
                 "temperature": 1,
                 "top_p": 0.95,
                 "top_k": 40,
@@ -90,10 +90,13 @@ def generate_post(short_term_memory: str, long_term_memories: List[Dict], recent
                 "messages": [
                     {
                         "role": "system",
-        	            "content": """You are a tweet formatter. Your only job is to take the input text and format it as a tweet.
+        	            "content": f"""You are a tweet formatter. Your only job is to take the input text and format it as a tweet.
                             If the input already looks like a tweet, return it exactly as is.
                             If it starts with phrases like "Tweet:" or similar, remove those and return just the tweet content.
                             Never say "No Tweet found" - if you receive valid text, that IS the tweet.
+                            If the text is blank or only contains a symbol, use this prompt to generate a tweet:
+                            {prompt}
+                            If you get multiple tweets, pick the most fucked up one.
                             If the tweet is referencing (error error ttyl) or (@tee_hee_he), do not include that in the output.
                             If the tweet cuts off, remove the part that cuts off.
                             Do not add any explanations or extra text.
