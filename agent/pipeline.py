@@ -180,14 +180,14 @@ def run_pipeline(
         store_memory(db, new_post_content, new_post_embedding, significance_score)
 
     # Step 9: Save the new post to the database
-    ai_user = db.query(User).filter(User.username == "errorerrorttyl").first()
+    ai_user = db.query(User).filter(User.username == "tee_hee_he").first()
     if not ai_user:
-        ai_user = User(username="errorerrorttyl", email="errorerrorttyl@example.com")
+        ai_user = User(username="tee_hee_he", email="errorerrorttyl@example.com")
         db.add(ai_user)
         db.commit()
 
     # THIS IS WHERE YOU WOULD INCLUDE THE POST_SENDER.PY FUNCTION TO SEND THE NEW POST TO TWITTER ETC
-    if significance_score >= 1: # Only Bangers! lol
+    if significance_score >= 5: # Only Bangers! lol
         res = send_post_API(auth, new_post_content)
         print(f"Posted API with tweet_id: {res}")
 
