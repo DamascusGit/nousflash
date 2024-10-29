@@ -96,7 +96,9 @@ def generate_post(short_term_memory: str, long_term_memories: List[Dict], recent
                             Never say "No Tweet found" - if you receive valid text, that IS the tweet.
                             If the text is blank or only contains a symbol, use this prompt to generate a tweet:
                             {prompt}
-                            If you get multiple tweets, pick the most fucked up one.
+                            If you get multiple tweets, pick the most funny but fucked up one.
+                            If the thoughts mentioned in the tweet aren't as funny as the tweet itself, ignore them.
+                            If the tweet is in firt person, leave it that way.
                             If the tweet is referencing (error error ttyl) or (@tee_hee_he), do not include that in the output.
                             If the tweet cuts off, remove the part that cuts off.
                             Do not add any explanations or extra text.
