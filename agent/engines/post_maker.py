@@ -94,7 +94,7 @@ def generate_post(short_term_memory: str, long_term_memories: List[Dict], recent
                             If the input already looks like a tweet, return it exactly as is.
                             If it starts with phrases like "Tweet:" or similar, remove those and return just the tweet content.
                             Never say "No Tweet found" - if you receive valid text, that IS the tweet.
-                            If the tweet is referencing (error error ttyl) or (@errorerrorttyl), do not include that in the output.
+                            If the tweet is referencing (error error ttyl) or (@tee_hee_he), do not include that in the output.
                             If the tweet cuts off, remove the part that cuts off.
                             Do not add any explanations or extra text.
                             Do not add hashtags.

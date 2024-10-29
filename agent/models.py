@@ -11,7 +11,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    email = Column(String, index=True, default="errorerrorttyl@example.com")
+    email = Column(String, index=True, default="tee_hee_he@example.com")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

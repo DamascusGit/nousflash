@@ -182,7 +182,7 @@ def run_pipeline(
     # Step 9: Save the new post to the database
     ai_user = db.query(User).filter(User.username == "tee_hee_he").first()
     if not ai_user:
-        ai_user = User(username="tee_hee_he", email="errorerrorttyl@example.com")
+        ai_user = User(username="tee_hee_he", email="tee_hee_he@example.com")
         db.add(ai_user)
         db.commit()
 
