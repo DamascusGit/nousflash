@@ -175,7 +175,7 @@ def run_pipeline(
     print(f"Significance score: {significance_score}")
 
     # Step 8: Store the new post in long-term memory if significant enough
-    if significance_score >= 7:
+    if significance_score >= 3:
         new_post_embedding = create_embedding(new_post_content, openai_api_key)
         store_memory(db, new_post_content, new_post_embedding, significance_score)
 
