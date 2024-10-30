@@ -17,7 +17,7 @@ from engines.long_term_mem import (
 from engines.post_maker import generate_post
 from engines.significance_scorer import score_significance
 from engines.post_sender import send_post, send_post_API
-from engines.wallet_send import transfer_eth, wallet_address_in_post, get_wallet_balance
+from engines.wallet_send import transfer_eth, wallet_address_in_post, get_wallet_balance, transfer_erc20, get_erc20_balance
 from engines.follow_user import follow_by_username, decide_to_follow_users
 from models import Post, User, TweetPost
 from twitter.account import Account
@@ -78,6 +78,7 @@ def run_pipeline(
     if len(notif_context) > 0:
         # Step 2.5 check wallet addresses in posts
         balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
+        balance_erc20 = get_erc20_balance(private_key_hex, eth_mainnet_rpc_url, erc20_address)
         print(f"Agent wallet balance is {balance_ether} ETH now.\n")
         
         if balance_ether > 0.3:
@@ -101,6 +102,39 @@ def run_pipeline(
                         break
                     else:
                         print("No wallet addresses or amounts to send ETH to.")
+                        break
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing wallet data: {e}")
+                    tries += 1
+                    continue
+                except KeyError as e:
+                    print(f"Missing key in wallet data: {e}")
+                    break
+        
+        time.sleep(5)
+
+        if balance_erc20 > 0:
+            tries = 0
+            max_tries = 2
+            while tries < max_tries:
+                wallet_data = erc20_instructions_in_post(
+                    notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                )
+                print(f"ERC20 address and amount chosen from Posts: {wallet_data}")
+                try:
+                    wallets = json.loads(wallet_data)
+                    if len(wallets) > 0:
+                        # Send ETH to the wallet addresses with specified amounts
+                        for wallet in wallets:
+                            address = wallet["address"]
+                            erc20_address = wallet['erc20_address']
+                            amount = wallet["amount"]
+                            transfer_erc20(
+                                private_key_hex, eth_mainnet_rpc_url, address, erc20_address, amount
+                            )
+                        break
+                    else:
+                        print("No wallet addresses and/or ERC20 address and/or amounts.")
                         break
                 except json.JSONDecodeError as e:
                     print(f"Error parsing wallet data: {e}")

@@ -16,7 +16,33 @@ def get_wallet_balance(private_key, eth_mainnet_rpc_url):
 
     return balance_ether
 
-def transfer_erc20_token(private_key, eth_mainnet_rpc_url, to_address, erc20_address, amount_of_tokens):
+def get_erc20_balance(private_key, eth_mainnet_rpc_url, erc20_address):
+    w3 = Web3(Web3.HTTPProvider(eth_mainnet_rpc_url))
+    public_address = w3.eth.account.from_key(private_key).address
+
+    # ERC20 ABI for balanceOf function
+    ERC20_ABI = [
+        {
+            "constant": True,
+            "inputs": [{"name": "_owner", "type": "address"}],
+            "name": "balanceOf", 
+            "outputs": [{"name": "balance", "type": "uint256"}],
+            "type": "function"
+        }
+    ]
+
+    # Create contract instance
+    token_contract = w3.eth.contract(
+        address=Web3.to_checksum_address(erc20_address),
+        abi=ERC20_ABI
+    )
+
+    # Get token balance
+    balance = token_contract.functions.balanceOf(public_address).call()
+    return balance
+
+
+def transfer_erc20(private_key, eth_mainnet_rpc_url, to_address, erc20_address, amount_of_tokens):
     """
     Transfers ERC20 tokens from one account to another.
 
@@ -251,3 +277,69 @@ def wallet_address_in_post(posts, private_key, eth_mainnet_rpc_url: str,llm_api_
         return response.json()['choices'][0]['message']['content']
     else:
         raise Exception(f"Error generating short-term memory: {response.text}")
+
+def erc20_instructions_in_post(posts, private_key, eth_mainnet_rpc_url: str, llm_api_key: str, erc20_address: str):
+    """
+    Detects wallet addresses or ENS domains from a list of posts and decides whether to transfer ERC20 tokens.
+    Converts all items to strings first, then checks for matches.
+
+    Parameters:
+    - posts (List): List of posts of any type
+    - private_key (str): Private key for wallet
+    - eth_mainnet_rpc_url (str): Ethereum RPC URL
+    - llm_api_key (str): API key for LLM service
+    - erc20_address (str): Address of ERC20 token contract
+
+    Returns:
+    - List[Dict]: List of dicts with 'address' and 'amount' keys
+    """
+
+    # Convert everything to strings first
+    str_posts = [str(post) for post in posts]
+    
+    # Then look for matches in all the strings
+    eth_pattern = re.compile(r'\b0x[a-fA-F0-9]{40}\b|\b\S+\.eth\b')
+    matches = []
+    
+    for post in str_posts:
+        found_matches = eth_pattern.findall(post)
+        matches.extend(found_matches)
+    
+    wallet_balance = get_wallet_balance(private_key, eth_mainnet_rpc_url, erc20_address)
+    prompt = get_wallet_decision_prompt(posts, matches, wallet_balance)
+    
+    response = requests.post(
+        url="https://api.hyperbolic.xyz/v1/chat/completions",
+        headers={
+            "Content-Type": "application/json", 
+            "Authorization": f"Bearer {llm_api_key}",
+        },
+        json={
+            "messages": [
+                {
+                    "role": "system",
+                    "content": prompt + "\nYou are deciding whether to transfer ERC20 tokens. Consider token balance and transaction costs."
+                },
+                {
+                    "role": "user", 
+                    "content": "Respond only with the wallet address(es), ERC20 address and token amount(s) you would like to send to. If you decide not to transfer, respond with 'NO_TRANSFER'."
+                }
+            ],
+            "model": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+            "presence_penalty": 0,
+            "temperature": 1,
+            "top_p": 0.95,
+            "top_k": 40,
+        }
+    )
+    
+    if response.status_code == 200:
+        llm_response = response.json()['choices'][0]['message']['content']
+        print(f"LLM decision for ERC20 transfers: {llm_response}")
+        
+        if llm_response == "NO_TRANSFER":
+            return None
+            
+        return llm_response
+    else:
+        raise Exception(f"Error getting LLM decision: {response.text}")
