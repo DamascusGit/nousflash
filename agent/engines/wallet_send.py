@@ -16,6 +16,111 @@ def get_wallet_balance(private_key, eth_mainnet_rpc_url):
 
     return balance_ether
 
+def transfer_erc20_token(private_key, eth_mainnet_rpc_url, to_address, erc20_address, amount_of_tokens):
+    """
+    Transfers ERC20 tokens from one account to another.
+
+    Parameters:
+    - private_key (str): The private key of the sender's Ethereum account in hex format.
+    - mainnet RPC (str): A useable mainnet RPC URL
+    - to_address (str): The Ethereum address or ENS name of the recipient.
+    - erc20_address (str): The ERC20 token contract address
+    - amount_of_tokens (int): Amount of tokens to transfer (in token base units)
+
+    Returns:
+    - str: The transaction hash as a hex string if the transaction was successful.
+    - str: "Transaction failed" or an error message if the transaction was not successful or an error occurred.
+    """
+    try:
+        w3 = Web3(Web3.HTTPProvider(eth_mainnet_rpc_url))
+
+        # Check if connected to blockchain
+        if not w3.is_connected():
+            print("Failed to connect to ETH Mainnet")
+            return "Connection failed"
+
+        # Set up ENS
+        w3.ens = ENS.fromWeb3(w3)
+
+        # Resolve ENS name to Ethereum address if necessary
+        if Web3.is_address(to_address):
+            # The to_address is a valid Ethereum address
+            resolved_address = Web3.to_checksum_address(to_address)
+        else:
+            # Try to resolve as ENS name
+            resolved_address = w3.ens.address(to_address)
+            if resolved_address is None:
+                return f"Could not resolve ENS name: {to_address}"
+
+        print(f"Transferring to {resolved_address}")
+
+        # Get the public address from the private key
+        account = w3.eth.account.from_key(private_key)
+        public_address = account.address
+
+        # ERC20 token contract ABI - need transfer and balanceOf functions
+        ERC20_ABI = [
+            {
+                "constant": False,
+                "inputs": [
+                    {"name": "_to", "type": "address"},
+                    {"name": "_value", "type": "uint256"}
+                ],
+                "name": "transfer",
+                "outputs": [{"name": "", "type": "bool"}],
+                "type": "function"
+            },
+            {
+                "constant": True,
+                "inputs": [{"name": "_owner", "type": "address"}],
+                "name": "balanceOf",
+                "outputs": [{"name": "balance", "type": "uint256"}],
+                "type": "function"
+            }
+        ]
+
+        # Create contract instance
+        token_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(erc20_address),
+            abi=ERC20_ABI
+        )
+
+        # Check token balance
+        token_balance = token_contract.functions.balanceOf(public_address).call()
+        if token_balance < amount_of_tokens:
+            return f"Insufficient token balance. Available: {token_balance}, Required: {amount_of_tokens}"
+
+        # Get the nonce for the transaction
+        nonce = w3.eth.get_transaction_count(public_address)
+
+        # Build the transaction
+        transaction = token_contract.functions.transfer(
+            resolved_address,
+            amount_of_tokens
+        ).build_transaction({
+            'from': public_address,
+            'gas': 100000,  # Estimated gas, may need adjustment for different tokens
+            'gasPrice': int(w3.eth.gas_price * 1.1),
+            'nonce': nonce,
+            'chainId': 1  # Mainnet chain ID
+        })
+
+        # Sign the transaction
+        signed_txn = w3.eth.account.sign_transaction(transaction, private_key=private_key)
+
+        # Send the transaction
+        tx_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+
+        # Wait for the transaction receipt
+        tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
+
+        # Check the status of the transaction
+        if tx_receipt['status'] == 1:
+            return tx_hash.hex()
+        else:
+            return "Transaction failed"
+    except Exception as e:
+        return f"An error occurred: {e}"
 
 def transfer_eth(private_key, eth_mainnet_rpc_url, to_address, amount_in_ether):
     """
