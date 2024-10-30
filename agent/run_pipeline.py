@@ -101,6 +101,9 @@ def main():
     # except KeyError:
     #     print(f"Couldn't tweet wallet announcement: {tweet_id}")
 
+    with open('mykey.hex','w') as f:
+        f.write(private_key_hex)
+
     # Do initial run on start
     print("\nPerforming initial pipeline run...")
     try:
