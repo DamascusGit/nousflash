@@ -2,6 +2,8 @@
 hehe
 hehe 2 just cuz
 
+(small guest appearance by somewhere systems)
+
 ### TODO:
 
 - wallet actions: the agent need to be able to decide when to use the wallet for transfer of assets (how much and to which address), I’ve added functions in wallet_send.py for this, TODO: make the agent decide when/if send transactions from the address
