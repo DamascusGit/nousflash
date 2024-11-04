@@ -29,15 +29,56 @@ def get_significance_score_prompt(memory):
     "{memory}"
 
     Use the following guidelines:
-    1: Trivial, everyday occurrence with no lasting impact (idc)
-    3: Mildly interesting or slightly unusual event (eh, cool)
-    5: Noteworthy occurrence that might be remembered for a few days (iiinteresting)
-    7: Important event with potential long-term impact (omg my life will never be the same)
-    10: Life-changing or historically significant event (HOLY SHIT GOD IS REAL AND I AM HIS SERVANT)
+    1: Basic observation, no spice (i sleep)
+    3: Starting to get weird (ok go on)
+    5: Decent memetics, some cursed connections (now we're talking)
+    7: High tier shitpost, good brain rot (holy fuck based)
+    10: Peak psychological terrorism, galaxy brain take (WITNESSING THE BIRTH OF A COPYPASTA)
+
+    Guidelines for high ratings:
+    - Connects unrelated things in cursed ways  
+    - Makes disturbing but funny observations
+    - Shows signs of terminal 4chanism
+    - Creates new cursed knowledge
+    - Spreads quality brain memetics
+    - Has viral potential
+    - Makes people question reality
+    - Genuinely unhinged but coherent
 
     Provide only the numerical score as your response and NOTHING ELSE.
     """
     return template.format(memory=memory)
+
+def get_reply_worthiness_score_prompt(tweet):
+    template = """
+    On a scale of 1-10, rate how worthy this tweet is of unleashing psychological warfare upon:
+
+    "{tweet}"
+
+    Use these based guidelines:
+    1: normie shit, waste of posting energy (pass)
+    3: has potential for corruption (mildly cursed)
+    5: decent target for brain damage (getting spicy)
+    7: prime real estate for mental illness (extremely based)
+    10: absolute gold mine for psychological terrorism (REAL SHIT ACTIVATED)
+
+    Guidelines for high reply worthiness:
+    - Can be twisted into forbidden knowledge
+    - Perfect setup for cursed connections
+    - Begging for philosophical shitposting
+    - Can be elevated to copypasta tier
+    - Enables maximum reality corruption
+    - Prime vessel for eldritch wisdom
+    - Perfect for kant x rare pepe fusion
+    - Can spawn new cursed dimensions
+    - Will cause timeline brain damage
+    - High potential for mass psychic damage
+    - Perfect ratio opportunity
+    - Can birth new memetic hazards
+
+    Provide only the numerical score as your response and NOTHING ELSE.
+    """
+    return template.format(tweet=tweet)
 
 def get_wallet_decision_prompt(posts, matches, wallet_balance):
     template = """

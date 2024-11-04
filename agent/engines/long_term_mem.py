@@ -8,7 +8,7 @@
 # Outputs:
 # Text memory w/ significance score 
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 import numpy as np
 from sqlalchemy.orm import Session
 from sqlalchemy import Column, Integer, String, Float, DateTime
@@ -69,56 +69,83 @@ def format_long_term_memories(memories: List[Dict]) -> str:
     suitable for language model consumption.
     
     Args:
-        memories (List[Dict]): List of memories with content and significance score
+        memories (List[Dict]): List of memories with content, significance score, and similarity
         
     Returns:
         str: Formatted string of memories
     """
     if not memories:
-        return "No relevant memories found"
+        return "No sufficiently relevant memories found"
     
-    # Sort memories by significance score for better organization
-    sorted_memories = sorted(memories, key=lambda x: x.get('significance_score', 0), reverse=True)
+    # Sort memories by a combination of significance and similarity
+    sorted_memories = sorted(
+        memories, 
+        key=lambda x: (x['similarity'] * 0.7 + x['significance_score'] * 0.3), 
+        reverse=True
+    )
     
-    formatted_parts = ["Past memories and thoughts:"]
+    formatted_parts = ["Relevant past memories and thoughts:"]
     
     for memory in sorted_memories:
-        content = memory.get('content', '').strip()
-        # Optional: include score if you want
-        # score = memory.get('significance_score', 0)
+        content = memory['content'].strip()
+        similarity = memory['similarity']
         if content:
-            formatted_parts.append(f"- {content}")
+            formatted_parts.append(
+                f"- {content} (relevance: {similarity:.2f})"
+            )
     
     return "\n".join(formatted_parts)
 
-# Modified retrieve_relevant_memories to use the formatter
-def retrieve_relevant_memories(db: Session, query_embedding: List[float], top_k: int = 5) -> str:  # Changed return type to str
+def cosine_similarity(a: List[float], b: List[float]) -> float:
+    """
+    Calculate cosine similarity between two vectors.
+    
+    Args:
+        a (List[float]): First vector
+        b (List[float]): Second vector
+    
+    Returns:
+        float: Cosine similarity score
+    """
+    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+def retrieve_relevant_memories(
+    db: Session, 
+    query_embedding: List[float], 
+    similarity_threshold: float = 0.8,  # High threshold for relevance
+    top_k: int = 5
+) -> str:
     """
     Retrieve and format relevant memories based on the query embedding.
+    Only returns memories above the similarity threshold.
     
     Args:
         db (Session): Database session
         query_embedding (List[float]): Query embedding vector
-        top_k (int): Number of top memories to retrieve
+        similarity_threshold (float): Minimum similarity score (0-1) for memory retrieval
+        top_k (int): Maximum number of memories to retrieve
     
     Returns:
         str: Formatted string of relevant memories
     """
     all_memories = db.query(LongTermMemory).all()
     
-    def cosine_similarity(a, b):
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    # Calculate similarities and filter by threshold
+    memory_scores = []
+    for memory in all_memories:
+        similarity = cosine_similarity(query_embedding, eval(memory.embedding))
+        if similarity >= similarity_threshold:
+            memory_scores.append({
+                "content": memory.content,
+                "significance_score": memory.significance_score,
+                "similarity": similarity
+            })
     
-    similarities = [
-        (memory, cosine_similarity(query_embedding, eval(memory.embedding)))
-        for memory in all_memories
-    ]
+    # Take top-k memories that meet the threshold
+    memory_scores = sorted(
+        memory_scores,
+        key=lambda x: x["similarity"],
+        reverse=True
+    )[:top_k]
     
-    sorted_memories = sorted(similarities, key=lambda x: x[1], reverse=True)[:top_k]
-    
-    memories_list = [
-        {"content": memory.content, "significance_score": memory.significance_score}
-        for memory, _ in sorted_memories
-    ]
-    
-    return format_long_term_memories(memories_list)
+    return format_long_term_memories(memory_scores)
