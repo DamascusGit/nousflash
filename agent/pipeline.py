@@ -50,35 +50,109 @@ class PostingPipeline:
         self.config = config
         self.ai_user = self._get_or_create_ai_user()
 
-    # Step 2: Fetch external context
-    # reply_fetch_list = []
-    # for e in recent_posts:
-    #     reply_fetch_list.append((e["tweet_id"], e["content"]))
-    notif_context_tuple = fetch_notification_context(account)
-    notif_context_id = [context[1] for context in notif_context_tuple]
+        # Step 2: Fetch external context
+        # reply_fetch_list = []
+        # for e in recent_posts:
+        #     reply_fetch_list.append((e["tweet_id"], e["content"]))
+        notif_context_tuple = fetch_notification_context(account)
+        notif_context_id = [context[1] for context in notif_context_tuple]
 
-    # filter all of the notifications for ones that haven't been seen before
-    existing_tweet_ids = {tweet.tweet_id for tweet in db.query(TweetPost.tweet_id).all()}
-    filtered_notif_context_tuple = [context for context in notif_context_tuple if context[1] not in existing_tweet_ids]
+        # filter all of the notifications for ones that haven't been seen before
+        existing_tweet_ids = {tweet.tweet_id for tweet in db.query(TweetPost.tweet_id).all()}
+        filtered_notif_context_tuple = [context for context in notif_context_tuple if context[1] not in existing_tweet_ids]
 
-    # add to database every tweet id you have seen
-    for id in notif_context_id:
-        new_tweet_post = TweetPost(tweet_id=id)
-        db.add(new_tweet_post)
-        db.commit()
+        # add to database every tweet id you have seen
+        for id in notif_context_id:
+            new_tweet_post = TweetPost(tweet_id=id)
+            db.add(new_tweet_post)
+            db.commit()
 
-    # print(notif_context_id)
-    notif_context = [context[0] for context in filtered_notif_context_tuple]
-    # print(f"fetched context tweet ids: {new_ids}\n")
-    print("New Notifications:\n")
-    for notif in notif_context_tuple:
-        print(f"- {notif[0]}, tweet at https://x.com/user/status/{notif[1]}\n")
-    external_context = notif_context
+        # print(notif_context_id)
+        notif_context = [context[0] for context in filtered_notif_context_tuple]
+        # print(f"fetched context tweet ids: {new_ids}\n")
+        print("New Notifications:\n")
+        for notif in notif_context_tuple:
+            print(f"- {notif[0]}, tweet at https://x.com/user/status/{notif[1]}\n")
+        external_context = notif_context
 
-    if len(notif_context) > 0:
+        if len(notif_context) > 0:
+            # Step 2.5 check wallet addresses in posts
+            balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
+            balance_erc20 = get_erc20_balance(private_key_hex, eth_mainnet_rpc_url, erc20_address)
+            print(f"Agent wallet balance is {balance_ether} ETH now.\n")
+            
+            if balance_ether > 0.3:
+                tries = 0
+                max_tries = 2
+                while tries < max_tries:
+                    wallet_data = wallet_address_in_post(
+                        notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                    )
+                    print(f"Wallet addresses and amounts chosen from Posts: {wallet_data}")
+                    try:
+                        wallets = json.loads(wallet_data)
+                        if len(wallets) > 0:
+                            # Send ETH to the wallet addresses with specified amounts
+                            for wallet in wallets:
+                                address = wallet["address"]
+                                amount = wallet["amount"]
+                                transfer_eth(
+                                    private_key_hex, eth_mainnet_rpc_url, address, amount
+                                )
+                            break
+                        else:
+                            print("No wallet addresses or amounts to send ETH to.")
+                            break
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing wallet data: {e}")
+                        tries += 1
+                        continue
+                    except KeyError as e:
+                        print(f"Missing key in wallet data: {e}")
+                        break
+            
+            time.sleep(5)
+
+            if balance_erc20 > 0:
+                tries = 0
+                max_tries = 2
+                while tries < max_tries:
+                    wallet_data = erc20_instructions_in_post(
+                        notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                    )
+                    print(f"ERC20 address and amount chosen from Posts: {wallet_data}")
+                    try:
+                        wallets = json.loads(wallet_data)
+                        if len(wallets) > 0:
+                            # Send ETH to the wallet addresses with specified amounts
+                            for wallet in wallets:
+                                address = wallet["address"]
+                                erc20_address = wallet['erc20_address']
+                                amount = wallet["amount"]
+                                transfer_erc20(
+                                    private_key_hex, eth_mainnet_rpc_url, address, erc20_address, amount
+                                )
+                            break
+                        else:
+                            print("No wallet addresses and/or ERC20 address and/or amounts.")
+                            break
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing wallet data: {e}")
+                        tries += 1
+                        continue
+                    except KeyError as e:
+                        print(f"Missing key in wallet data: {e}")
+                        break
+            
+            time.sleep(5)
+
+            print("Deciding following now")
+            # Step 2.75 decide if follow some users
+            # Handle replies to mentions and interactions
+            handle_replies(db, account, auth, external_context, llm_api_key)
+
         # Step 2.5 check wallet addresses in posts
         balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
-        balance_erc20 = get_erc20_balance(private_key_hex, eth_mainnet_rpc_url, erc20_address)
         print(f"Agent wallet balance is {balance_ether} ETH now.\n")
         
         if balance_ether > 0.3:
@@ -87,80 +161,7 @@ class PostingPipeline:
             while tries < max_tries:
                 wallet_data = wallet_address_in_post(
                     notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
-                )
-                print(f"Wallet addresses and amounts chosen from Posts: {wallet_data}")
-                try:
-                    wallets = json.loads(wallet_data)
-                    if len(wallets) > 0:
-                        # Send ETH to the wallet addresses with specified amounts
-                        for wallet in wallets:
-                            address = wallet["address"]
-                            amount = wallet["amount"]
-                            transfer_eth(
-                                private_key_hex, eth_mainnet_rpc_url, address, amount
-                            )
-                        break
-                    else:
-                        print("No wallet addresses or amounts to send ETH to.")
-                        break
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing wallet data: {e}")
-                    tries += 1
-                    continue
-                except KeyError as e:
-                    print(f"Missing key in wallet data: {e}")
-                    break
-        
-        time.sleep(5)
 
-        if balance_erc20 > 0:
-            tries = 0
-            max_tries = 2
-            while tries < max_tries:
-                wallet_data = erc20_instructions_in_post(
-                    notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
-                )
-                print(f"ERC20 address and amount chosen from Posts: {wallet_data}")
-                try:
-                    wallets = json.loads(wallet_data)
-                    if len(wallets) > 0:
-                        # Send ETH to the wallet addresses with specified amounts
-                        for wallet in wallets:
-                            address = wallet["address"]
-                            erc20_address = wallet['erc20_address']
-                            amount = wallet["amount"]
-                            transfer_erc20(
-                                private_key_hex, eth_mainnet_rpc_url, address, erc20_address, amount
-                            )
-                        break
-                    else:
-                        print("No wallet addresses and/or ERC20 address and/or amounts.")
-                        break
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing wallet data: {e}")
-                    tries += 1
-                    continue
-                except KeyError as e:
-                    print(f"Missing key in wallet data: {e}")
-                    break
-        
-        time.sleep(5)
-
-        print("Deciding following now")
-        # Step 2.75 decide if follow some users
-        # Handle replies to mentions and interactions
-        handle_replies(db, account, auth, external_context, llm_api_key)
-
-    # Step 2.5 check wallet addresses in posts
-    balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
-    print(f"Agent wallet balance is {balance_ether} ETH now.\n")
-    
-    if balance_ether > 0.3:
-        tries = 0
-        max_tries = 2
-        while tries < max_tries:
-            wallet_data = wallet_address_in_post(
-                notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
     def _get_or_create_ai_user(self) -> User:
         """Get or create the AI user in the database."""
         ai_user = (self.config.db.query(User)
