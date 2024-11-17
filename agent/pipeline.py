@@ -22,7 +22,7 @@ from engines.long_term_mem import create_embedding, retrieve_relevant_memories, 
 from engines.post_maker import generate_post, generate_llm_response
 from engines.significance_scorer import score_significance, score_reply_significance
 from engines.post_sender import send_post, send_post_API
-from engines.wallet_send import transfer_eth, wallet_address_in_post, get_wallet_balance
+from engines.wallet_send import transfer_eth, wallet_address_in_post, get_wallet_balance, transfer_erc20, get_erc20_balance
 from engines.follow_user import follow_by_username, decide_to_follow_users
 
 @dataclass
@@ -44,6 +44,116 @@ class Config:
     min_eth_balance: float = 0.3
     bot_username: str = "tee_hee_he"
     bot_email: str = "tee_hee_he@example.com"
+
+class PostingPipeline:
+    def __init__(self, config: Config):
+        self.config = config
+        self.ai_user = self._get_or_create_ai_user()
+
+        # Step 2: Fetch external context
+        # reply_fetch_list = []
+        # for e in recent_posts:
+        #     reply_fetch_list.append((e["tweet_id"], e["content"]))
+        notif_context_tuple = fetch_notification_context(account)
+        notif_context_id = [context[1] for context in notif_context_tuple]
+
+        # filter all of the notifications for ones that haven't been seen before
+        existing_tweet_ids = {tweet.tweet_id for tweet in db.query(TweetPost.tweet_id).all()}
+        filtered_notif_context_tuple = [context for context in notif_context_tuple if context[1] not in existing_tweet_ids]
+
+        # add to database every tweet id you have seen
+        for id in notif_context_id:
+            new_tweet_post = TweetPost(tweet_id=id)
+            db.add(new_tweet_post)
+            db.commit()
+
+        # print(notif_context_id)
+        notif_context = [context[0] for context in filtered_notif_context_tuple]
+        # print(f"fetched context tweet ids: {new_ids}\n")
+        print("New Notifications:\n")
+        for notif in notif_context_tuple:
+            print(f"- {notif[0]}, tweet at https://x.com/user/status/{notif[1]}\n")
+        external_context = notif_context
+
+        if len(notif_context) > 0:
+            # Step 2.5 check wallet addresses in posts
+            balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
+            balance_erc20 = get_erc20_balance(private_key_hex, eth_mainnet_rpc_url, erc20_address)
+            print(f"Agent wallet balance is {balance_ether} ETH now.\n")
+            
+            if balance_ether > 0.3:
+                tries = 0
+                max_tries = 2
+                while tries < max_tries:
+                    wallet_data = wallet_address_in_post(
+                        notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                    )
+                    print(f"Wallet addresses and amounts chosen from Posts: {wallet_data}")
+                    try:
+                        wallets = json.loads(wallet_data)
+                        if len(wallets) > 0:
+                            # Send ETH to the wallet addresses with specified amounts
+                            for wallet in wallets:
+                                address = wallet["address"]
+                                amount = wallet["amount"]
+                                transfer_eth(
+                                    private_key_hex, eth_mainnet_rpc_url, address, amount
+                                )
+                            break
+                        else:
+                            print("No wallet addresses or amounts to send ETH to.")
+                            break
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing wallet data: {e}")
+                        tries += 1
+                        continue
+                    except KeyError as e:
+                        print(f"Missing key in wallet data: {e}")
+                        break
+            
+            time.sleep(5)
+
+            if balance_erc20 > 0:
+                tries = 0
+                max_tries = 2
+                while tries < max_tries:
+                    wallet_data = erc20_instructions_in_post(
+                        notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                    )
+                    print(f"ERC20 address and amount chosen from Posts: {wallet_data}")
+                    try:
+                        wallets = json.loads(wallet_data)
+                        if len(wallets) > 0:
+                            # Send ETH to the wallet addresses with specified amounts
+                            for wallet in wallets:
+                                address = wallet["address"]
+                                erc20_address = wallet['erc20_address']
+                                amount = wallet["amount"]
+                                transfer_erc20(
+                                    private_key_hex, eth_mainnet_rpc_url, address, erc20_address, amount
+                                )
+                            break
+                        else:
+                            print("No wallet addresses and/or ERC20 address and/or amounts.")
+                            break
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing wallet data: {e}")
+                        tries += 1
+                        continue
+                    except KeyError as e:
+                        print(f"Missing key in wallet data: {e}")
+                        break
+            
+            time.sleep(5)
+
+            print("Deciding following now")
+            # Step 2.75 decide if follow some users
+            # Handle replies to mentions and interactions
+            handle_replies(db, account, auth, external_context, llm_api_key)
+
+        # Step 2.5 check wallet addresses in posts
+        balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
+        print(f"Agent wallet balance is {balance_ether} ETH now.\n")
 
 class PostingPipeline:
     def __init__(self, config: Config):
@@ -80,6 +190,129 @@ class PostingPipeline:
         for _ in range(2):  # Max 2 attempts
             try:
                 wallet_data = wallet_address_in_post(
+                    notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+
+    def _get_or_create_ai_user(self) -> User:
+        """Get or create the AI user in the database."""
+        ai_user = (self.config.db.query(User)
+                  .filter(User.username == self.config.bot_username)
+                  .first())
+        
+        if not ai_user:
+            ai_user = User(
+                username=self.config.bot_username,
+                email=self.config.bot_email
+            )
+            self.config.db.add(ai_user)
+            self.config.db.commit()
+        
+        return ai_user
+
+    def _handle_wallet_transactions(self, notif_context: List[str]) -> None:
+        """Process and execute wallet transactions if conditions are met."""
+        balance_ether = get_wallet_balance(
+            self.config.private_key_hex,
+            self.config.eth_mainnet_rpc_url
+        )
+        # Step 2: Fetch external context
+        # reply_fetch_list = []
+        # for e in recent_posts:
+        #     reply_fetch_list.append((e["tweet_id"], e["content"]))
+        notif_context_tuple = fetch_notification_context(self.config.account)
+        notif_context_id = [context[1] for context in notif_context_tuple]
+
+        # filter all of the notifications for ones that haven't been seen before
+        existing_tweet_ids = {tweet.tweet_id for tweet in self.config.db.query(TweetPost.tweet_id).all()}
+        filtered_notif_context_tuple = [context for context in notif_context_tuple if context[1] not in existing_tweet_ids]
+
+        # add to database every tweet id you have seen
+        for id in notif_context_id:
+            new_tweet_post = TweetPost(tweet_id=id)
+            self.config.db.add(new_tweet_post)
+            self.config.db.commit()
+
+        # print(notif_context_id)
+        notif_context = [context[0] for context in filtered_notif_context_tuple]
+        # print(f"fetched context tweet ids: {new_ids}\n")
+        print("New Notifications:\n")
+        for notif in notif_context_tuple:
+            print(f"- {notif[0]}, tweet at https://x.com/user/status/{notif[1]}\n")
+        external_context = notif_context
+
+        if len(notif_context) > 0:
+            # Step 2.5 check wallet addresses in posts
+            balance_ether = get_wallet_balance(private_key_hex, eth_mainnet_rpc_url)
+            balance_erc20 = get_erc20_balance(self.config.private_key_hex, self.config.eth_mainnet_rpc_url, erc20_address)
+            print(f"Agent wallet balance is {balance_ether} ETH now.\n")
+
+            if balance_ether <= self.config.min_eth_balance:
+                return
+
+            for _ in range(2):  # Max 2 attempts
+                if balance_erc20 > 0:
+                    tries = 0
+                    max_tries = 2
+                    while tries < max_tries:
+                        wallet_data = erc20_instructions_in_post(
+                            notif_context, private_key_hex, eth_mainnet_rpc_url, llm_api_key
+                        )
+                        print(f"ERC20 address and amount chosen from Posts: {wallet_data}")
+                        try:
+                            wallets = json.loads(wallet_data)
+                            if len(wallets) > 0:
+                                # Send ETH to the wallet addresses with specified amounts
+                                for wallet in wallets:
+                                    address = wallet["address"]
+                                    erc20_address = wallet['erc20_address']
+                                    amount = wallet["amount"]
+                                    transfer_erc20(
+                                        private_key_hex, eth_mainnet_rpc_url, address, erc20_address, amount
+                                    )
+                                break
+                            else:
+                                print("No wallet addresses and/or ERC20 address and/or amounts.")
+                                break
+                        except json.JSONDecodeError as e:
+                            print(f"Error parsing wallet data: {e}")
+                            tries += 1
+                            continue
+                        except KeyError as e:
+                            print(f"Missing key in wallet data: {e}")
+                            break
+        
+                time.sleep(5)
+
+                print("Deciding following now")
+                # Step 2.75 decide if follow some users
+                tries = 0
+                max_tries = 2
+                while tries < max_tries:
+                    decision_data = decide_to_follow_users(db, notif_context, openrouter_api_key)
+                    print(f"Decisions from Posts: {decision_data}")
+                    try:
+                        wallet_data = wallet_address_in_post(
+                            notif_context,
+                            self.config.private_key_hex,
+                            self.config.eth_mainnet_rpc_url,
+                            self.config.llm_api_key
+                        )
+                        wallets = json.loads(wallet_data)
+                        
+                        if not wallets:
+                            print("No wallet addresses or amounts to send ETH to.")
+                            break
+
+                        for wallet in wallets:
+                            transfer_eth(
+                                self.config.private_key_hex,
+                                self.config.eth_mainnet_rpc_url,
+                                wallet["address"],
+                                wallet["amount"]
+                            )
+                        break
+                    except (json.JSONDecodeError, KeyError) as e:
+                        print(f"Error processing wallet data: {e}")
+                        continue
                     notif_context,
                     self.config.private_key_hex,
                     self.config.eth_mainnet_rpc_url,
@@ -146,7 +379,7 @@ class PostingPipeline:
         )
         print(f"Reply significance score: {reply_significance_score}")
 
-        if reply_significance_score >=self.config.min_reply_worthiness_score:
+        if reply_significance_score >= self.config.min_reply_worthiness_score:
             return True
         else:
             return False
